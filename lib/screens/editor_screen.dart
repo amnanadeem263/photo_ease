@@ -1,10 +1,43 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'dart:typed_data';
 import 'package:image/image.dart' as img;
+import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../services/ai_service.dart';
+
+enum FilterType {
+  none,
+  grayscale,
+  sepia,
+  invert,
+  sharpen,
+  blur,
+  emboss,
+  sobel,
+  contrastBoost,
+  contrastReduce,
+  bright,
+  dark,
+  monoMood,
+  vintage,
+  coolTone
+}
+
+enum FlipType { none, horizontal, vertical }
+
+class Sticker {
+  String assetPath;
+  Offset position;
+  double scale;
+  double rotation;
+
+  Sticker({
+    required this.assetPath,
+    this.position = const Offset(100, 100),
+    this.scale = 1.0,
+    this.rotation = 0.0,
+  });
+}
 
 class EditorScreen extends StatefulWidget {
   final File originalFile;
@@ -14,59 +47,22 @@ class EditorScreen extends StatefulWidget {
   _EditorScreenState createState() => _EditorScreenState();
 }
 
-enum FilterType { none, grayscale, sepia }
-
 class _EditorScreenState extends State<EditorScreen> {
   late File _currentFile;
   double _brightness = 0.0;
   FilterType _filter = FilterType.none;
-  String _overlayText = '';
-  int _selectedTextStyle = 0;
   bool _isProcessing = false;
+  Uint8List _imageBytes = Uint8List(0);
   final Box box = Hive.box('images');
 
-  final List<TextStyle> _textPresets = [
-    const TextStyle(
-      fontSize: 28,
-      color: Colors.white,
-      fontWeight: FontWeight.bold,
-      fontFamily: "Roboto",
-      shadows: [Shadow(blurRadius: 3, color: Colors.black54)],
-    ),
-    const TextStyle(
-      fontSize: 24,
-      color: Colors.black,
-      fontStyle: FontStyle.italic,
-      fontFamily: "Roboto",
-    ),
-    const TextStyle(
-      fontSize: 30,
-      color: Colors.yellow,
-      fontWeight: FontWeight.w700,
-      fontFamily: "Roboto",
-      shadows: [Shadow(blurRadius: 4, color: Colors.black)],
-    ),
-    const TextStyle(
-      fontSize: 22,
-      color: Colors.red,
-      fontWeight: FontWeight.bold,
-      fontFamily: "Roboto",
-    ),
-  ];
+  int _rotation = 0;
+  FlipType _flip = FlipType.none;
 
   @override
   void initState() {
     super.initState();
     _currentFile = widget.originalFile;
-  }
-
-  Future<void> _crop() async {
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: _currentFile.path,
-    );
-    if (cropped != null) {
-      setState(() => _currentFile = File(cropped.path));
-    }
+    _updatePreview();
   }
 
   img.Image _decodeImage(File file) {
@@ -76,6 +72,11 @@ class _EditorScreenState extends State<EditorScreen> {
       throw Exception('Unable to decode image or invalid size.');
     }
     return decoded;
+  }
+
+  img.Image _sharpen(img.Image src) {
+    final kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+    return img.convolution(src, filter: kernel, div: 1);
   }
 
   img.Image _applyFilterAndBrightness(img.Image src) {
@@ -92,11 +93,64 @@ class _EditorScreenState extends State<EditorScreen> {
       case FilterType.sepia:
         out = img.sepia(out);
         break;
+      case FilterType.invert:
+        out = img.invert(out);
+        break;
+      case FilterType.sharpen:
+        out = _sharpen(out);
+        break;
+      case FilterType.blur:
+        out = img.gaussianBlur(out,radius: 5);
+        break;
+      case FilterType.emboss:
+        out = img.emboss(out);
+        break;
+      case FilterType.sobel:
+        out = img.sobel(out);
+        break;
+      case FilterType.contrastBoost:
+        out = img.adjustColor(out, contrast: 30);
+        break;
+      case FilterType.contrastReduce:
+        out = img.adjustColor(out, contrast: -30);
+        break;
+      case FilterType.bright:
+        out = img.adjustColor(out, brightness: 50);
+        break;
+      case FilterType.dark:
+        out = img.adjustColor(out, brightness: -50);
+        break;
+      case FilterType.monoMood:
+        out = img.grayscale(out);
+        out = img.adjustColor(out, contrast: 20);
+        break;
+      case FilterType.vintage:
+        out = img.sepia(out);
+        out = img.adjustColor(out, contrast: 15, saturation: -10);
+        break;
+      case FilterType.coolTone:
+        out = img.adjustColor(out, gamma: 1.2, saturation: -20);
+        break;
       case FilterType.none:
         break;
     }
 
+    // Flip
+    if (_flip == FlipType.horizontal) out = img.flipHorizontal(out);
+    if (_flip == FlipType.vertical) out = img.flipVertical(out);
+
+    // Rotation
+    if (_rotation != 0) out = img.copyRotate(out, angle: _rotation);
+
     return out;
+  }
+
+  void _updatePreview() {
+    final src = _decodeImage(_currentFile);
+    final processed = _applyFilterAndBrightness(src);
+    setState(() {
+      _imageBytes = Uint8List.fromList(img.encodePng(processed));
+    });
   }
 
   Future<File> _renderFinalImage() async {
@@ -104,164 +158,183 @@ class _EditorScreenState extends State<EditorScreen> {
     try {
       final src = _decodeImage(_currentFile);
       final processed = _applyFilterAndBrightness(src);
-
       final bytes = img.encodePng(processed);
       final dir = await getApplicationDocumentsDirectory();
-      final outFile = File(
-          '${dir.path}/edited_${DateTime.now().millisecondsSinceEpoch}.png');
+      final outFile = File('${dir.path}/edited_${DateTime.now().millisecondsSinceEpoch}.png');
       await outFile.writeAsBytes(bytes);
-
       return outFile;
     } finally {
       setState(() => _isProcessing = false);
     }
   }
 
-  Future<void> _saveFinal({String title = ''}) async {
+  Future<void> _saveFinal() async {
     try {
       final file = await _renderFinalImage();
       box.add({
         'path': file.path,
-        'title': title,
         'created': DateTime.now().toIso8601String()
       });
       if (mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint("❌ Save failed: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to save image: $e")),
+          SnackBar(content: Text("Failed to save image: $e"))
       );
     }
   }
 
-  Future<void> _askGptForCaption() async {
-    final descriptionController = TextEditingController();
-    final result = await showDialog<String>(
+  void _deleteImage() {
+    showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Describe image (optional)'),
-        content: TextField(controller: descriptionController),
+        title: const Text('Delete Image'),
+        content: const Text('Are you sure you want to delete this image?'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
-              onPressed: () =>
-                  Navigator.pop(ctx, descriptionController.text.trim()),
-              child: const Text('Generate')),
+            onPressed: () {
+              try { if (_currentFile.existsSync()) _currentFile.deleteSync(); } catch (_) {}
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+            },
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
-    if (result == null) return;
-
-    final svc = AiService(
-        apiKey:
-        "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"); // ⚠️ Replace with backend key, don’t keep in code
-    final caption = await svc.generateCaption(result);
-    setState(() => _overlayText = caption);
   }
 
   Widget _buildControls() {
+    final filterNames = {
+      FilterType.none: 'None',
+      FilterType.grayscale: 'Grayscale',
+      FilterType.sepia: 'Sepia',
+      FilterType.invert: 'Invert',
+      FilterType.sharpen: 'Sharpen',
+      FilterType.blur: 'Blur',
+      FilterType.emboss: 'Emboss',
+      FilterType.sobel: 'Sobel',
+      FilterType.contrastBoost: 'Contrast +',
+      FilterType.contrastReduce: 'Contrast -',
+      FilterType.bright: 'Bright',
+      FilterType.dark: 'Dark',
+      FilterType.monoMood: 'Mono Mood',
+      FilterType.vintage: 'Vintage',
+      FilterType.coolTone: 'Cool Tone'
+    };
+
     return Column(
       children: [
-        Row(
-          children: [
-            IconButton(icon: const Icon(Icons.crop), onPressed: _crop),
-            IconButton(
-                icon: const Icon(Icons.filter_none),
-                onPressed: () => setState(() => _filter = FilterType.none)),
-            IconButton(
-                icon: const Icon(Icons.photo_filter),
-                onPressed: () => setState(() => _filter = FilterType.grayscale)),
-            IconButton(
-                icon: const Icon(Icons.tonality),
-                onPressed: () => setState(() => _filter = FilterType.sepia)),
-            IconButton(
-              icon: const Icon(Icons.text_fields),
-              onPressed: () async {
-                final txt = await _showTextInput();
-                if (txt != null) setState(() => _overlayText = txt);
-              },
-            ),
-            IconButton(
-                icon: const Icon(Icons.smart_toy), onPressed: _askGptForCaption),
-          ],
+        // Filter buttons
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: FilterType.values.map((f) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: ElevatedButton(
+                  onPressed: () { setState(() { _filter = f; _updatePreview(); }); },
+                  child: Text(filterNames[f] ?? ''),
+                ),
+              );
+            }).toList(),
+          ),
         ),
+
+        // Brightness slider
         Row(
           children: [
             const Text('Brightness'),
             Expanded(
               child: Slider(
-                value: _brightness,
-                min: -1.0,
-                max: 1.0,
-                onChanged: (v) => setState(() => _brightness = v),
+                  value: _brightness,
+                  min: -1.0,
+                  max: 1.0,
+                  onChanged: (v) { setState(() => _brightness = v); _updatePreview(); }
               ),
             ),
-            ElevatedButton(
-              onPressed:
-              _isProcessing ? null : () => _saveFinal(title: _overlayText),
-              child: const Text('Save'),
+          ],
+        ),
+
+        // Rotate & Flip icons
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.rotate_left, size: 30),
+              tooltip: 'Rotate Left',
+              onPressed: () {
+                setState(() {
+                  _rotation = (_rotation - 90) % 360;
+                  _updatePreview();
+                });
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.rotate_right, size: 30),
+              tooltip: 'Rotate Right',
+              onPressed: () {
+                setState(() {
+                  _rotation = (_rotation + 90) % 360;
+                  _updatePreview();
+                });
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.flip, size: 30),
+              tooltip: 'Flip Horizontal',
+              onPressed: () {
+                setState(() {
+                  _flip = FlipType.horizontal;
+                  _updatePreview();
+                });
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.flip_camera_android, size: 30),
+              tooltip: 'Flip Vertical',
+              onPressed: () {
+                setState(() {
+                  _flip = FlipType.vertical;
+                  _updatePreview();
+                });
+              },
             ),
           ],
+        ),
+
+        // Save button
+        ElevatedButton(
+          onPressed: _isProcessing ? null : _saveFinal,
+          child: const Text('Save'),
         ),
       ],
     );
   }
 
-  Future<String?> _showTextInput() async {
-    final ctrl = TextEditingController(text: _overlayText);
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Overlay text'),
-        content: TextField(controller: ctrl),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, null),
-              child: const Text('Cancel')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('OK')),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final imageWidget = Image.file(_currentFile);
+    final imageWidget = _imageBytes.isNotEmpty
+        ? Container(
+      decoration: BoxDecoration(border: Border.all(color: Colors.white, width: 4)),
+      child: Image.memory(_imageBytes),
+    )
+        : Container(
+      decoration: BoxDecoration(border: Border.all(color: Colors.white, width: 4)),
+      child: Image.file(_currentFile),
+    );
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Editor')),
+      appBar: AppBar(
+        title: const Text('Editor'),
+        actions: [
+          IconButton(icon: const Icon(Icons.delete), tooltip: 'Delete Image', onPressed: _deleteImage),
+        ],
+      ),
       body: Column(
         children: [
-          Expanded(
-            child: Stack(
-              children: [
-                Center(child: imageWidget),
-                if (_overlayText.isNotEmpty)
-                  Positioned(
-                    bottom: 24,
-                    left: 16,
-                    right: 16,
-                    child: Center(
-                      child: Text(
-                        _overlayText,
-                        style: _textPresets[_selectedTextStyle],
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                if (_isProcessing)
-                  Positioned.fill(
-                    child: Container(
-                      color: Colors.black26,
-                      child: const Center(child: CircularProgressIndicator()),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          Expanded(child: Center(child: imageWidget)),
           _buildControls(),
         ],
       ),

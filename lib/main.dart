@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:flutter_localizations/flutter_localizations.dart'; // ✅ add this
-import 'screens/home_screen.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'screens/splash_screen.dart'; // ✅ SplashScreen first
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   await Hive.openBox('images');
+
   runApp(const MyApp());
 }
 
@@ -16,13 +17,13 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Image Editor',
+      title: 'PhotoEase',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.brown,
+        primarySwatch: Colors.blue,
       ),
 
-      // ✅ Force English and remove Chinese UI text
+      // ✅ Force English and remove other languages
       locale: const Locale('en', 'US'),
       supportedLocales: const [
         Locale('en', 'US'),
@@ -33,7 +34,8 @@ class MyApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
 
-      home: const HomeScreen(),
+      // ✅ Start with SplashScreen
+      home: const SplashScreen(),
     );
   }
 }

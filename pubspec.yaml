@@ -8,8 +8,10 @@ environment:
 
 
 dependencies:
+
   flutter:
     sdk: flutter
+  flutter_colorpicker: ^1.1.0
   cupertino_icons: ^1.0.8
 
 
@@ -20,6 +22,7 @@ dependencies:
   image_picker: ^1.2.0
   image_cropper: ^9.1.0
   image: ^4.2.0
+
 
   # Storage & paths
   path_provider: ^2.1.4
@@ -39,5 +42,19 @@ dev_dependencies:
 
 
 flutter:
+  uses-material-design: true
   assets:
     - assets/fonts/Roboto-Regular.ttf
+
+
+    - assets/images/background.png
+    - assets/images/logo.png
+    - assets/images/sample1.jpg
+    - assets/images/sample2.jpg
+    - assets/images/sample3.jpg
+    - assets/images/sample4.jpg
+    - assets/images/sample5.jpg
+    - assets/images/sample6.jpg
+    - assets/images/sample7.jpg
+    - assets/images/sample8.jpg
+    - assets/images/sample9.jpg
