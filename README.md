@@ -21,4 +21,4 @@ A simple Flutter app to **pick, edit, save, and delete images** locally using Hi
 1. Clone repo:
 
 ```bash
-git clone <repo-url>
+git clone <https://github.com/amnanadeem263/photo_ease.git>
