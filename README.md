@@ -1,16 +1,24 @@
-# photo_ease
+# Photo_Ease
 
-A new Flutter project.
+A simple Flutter app to **pick, edit, save, and delete images** locally using Hive.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## Features
 
-A few resources to get you started if this is your first Flutter project:
+* Pick images from **Gallery** or **Camera**  
+* Apply **filters**: Grayscale, Sepia, Invert, Sharpen, Blur, Emboss, Sobel, Contrast, Bright/Dark, Mono Mood, Vintage, Cool Tone  
+* Adjust **brightness**  
+* **Rotate** and **Flip** images  
+* **Save** edited images  
+* **View and delete** saved images  
+* **Back button** to navigate to main PhotoEase screen  
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Installation
+
+1. Clone repo:
+
+```bash
+git clone <repo-url>
